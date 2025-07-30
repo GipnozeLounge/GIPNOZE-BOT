@@ -191,21 +191,21 @@ if __name__ == '__main__':
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            CHOOSING: [MessageHandler(filters.TEXT, choose_action)],
-            BOOK_DATE: [MessageHandler(filters.TEXT, book_date)],
-            BOOK_TIME: [CallbackQueryHandler(book_time)],
-            GUESTS: [MessageHandler(filters.TEXT, guests)],
-            SELECT_CABIN: [CallbackQueryHandler(select_cabin, pattern="^(?!confirm_|reject_).+")],
-            CONTACT_NAME: [MessageHandler(filters.TEXT, contact_name)],
-            CONTACT_PHONE: [MessageHandler(filters.TEXT, contact_phone)],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_chat=True,
-        per_message=True
-    )
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('start', start)],
+    states={
+        CHOOSING: [MessageHandler(filters.TEXT, choose_action)],
+        BOOK_DATE: [MessageHandler(filters.TEXT, book_date)],
+        BOOK_TIME: [CallbackQueryHandler(book_time)],
+        GUESTS: [MessageHandler(filters.TEXT, guests)],
+        SELECT_CABIN: [CallbackQueryHandler(select_cabin)],
+        CONTACT_NAME: [MessageHandler(filters.TEXT, contact_name)],
+        CONTACT_PHONE: [MessageHandler(filters.TEXT, contact_phone)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+    # пер_chat залишаємо, бо це логічно для юзерів
+    per_chat=True
+)
 
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(booking_callback, pattern="^(confirm|reject)_"))
