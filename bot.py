@@ -1,4 +1,4 @@
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     ConversationHandler, ContextTypes, filters, CallbackQueryHandler
@@ -13,9 +13,10 @@ CHOOSING, BOOK_DATE, BOOK_TIME, GUESTS, CONTACT_NAME, CONTACT_PHONE, SELECT_CABI
 # ID групи Telegram, куди надсилати повідомлення
 ADMIN_CHAT_ID = "@gipnoze_lounge_chat"
 ADMIN_PHONE = "+380956232134"
-ADMIN_USER_ID = 6073809255  # <-- заміни на свій Telegram user ID
+ADMIN_USER_ID = 6073809255  # <-- твій Telegram user ID
 
-bookings = []  # Список для збереження бронювань у пам'яті
+# Збереження бронювань як список словників
+bookings = []
 
 # Часові слоти з 17:00 по 22:30 з кроком 30 хвилин
 time_slots = [f"{h:02d}:{m:02d}" for h in range(17, 23) for m in (0, 30) if not (h == 22 and m > 30)]
@@ -58,7 +59,7 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("Наразі немає активних бронювань.")
             else:
                 for i, b in enumerate(bookings, 1):
-                    await update.message.reply_text(f"#{i}: {b}")
+                    await update.message.reply_text(f"#{i} - {b['name']}, {b['date']} {b['time']}, Статус: {b['status']}")
         else:
             await update.message.reply_text("Ця функція тільки для адміністратора.")
         return ConversationHandler.END
@@ -82,15 +83,12 @@ async def book_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     context.user_data['time'] = query.data
 
-    # Показати зайняті кабінки на дату + час
     date = context.user_data['date']
     time = context.user_data['time']
     busy = []
     for b in bookings:
-        if f"Дата: {date}" in b and f"Час: {time}" in b:
-            for cabin in CABINS:
-                if cabin in b:
-                    busy.append(cabin)
+        if b['date'] == date and b['time'] == time and b['status'] == 'Підтверджено':
+            busy.append(b['cabin'])
 
     available_cabins = [cabin for cabin in CABINS if cabin not in busy]
     if not available_cabins:
@@ -106,10 +104,9 @@ async def guests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     time = context.user_data['time']
     busy = []
     for b in bookings:
-        if f"Дата: {date}" in b and f"Час: {time}" in b:
-            for cabin in CABINS:
-                if cabin in b:
-                    busy.append(cabin)
+        if b['date'] == date and b['time'] == time and b['status'] == 'Підтверджено':
+            busy.append(b['cabin'])
+
     available_cabins = [cabin for cabin in CABINS if cabin not in busy]
     keyboard = [[InlineKeyboardButton(cabin, callback_data=cabin)] for cabin in available_cabins]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -128,25 +125,72 @@ async def contact_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Ваш номер телефону?")
     return CONTACT_PHONE
 
+def format_booking_msg(booking):
+    return (
+        f"📅 Нове бронювання:\n"
+        f"Ім'я: {booking['name']}\n"
+        f"Тип: {booking.get('action', '—')}\n"
+        f"Дата: {booking['date']}\n"
+        f"Час: {booking['time']}\n"
+        f"Гостей: {booking['guests']}\n"
+        f"Місце: {booking['cabin']}\n"
+        f"Телефон: {booking['contact']}\n"
+        f"Для запитань: {ADMIN_PHONE}\n"
+        f"Статус: {booking['status']}"
+    )
+
 async def contact_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['contact'] = update.message.text
-    summary = (
-        f"📅 Нова бронь:\n"
-        f"Ім'я: {context.user_data['name']}\n"
-        f"Тип: {context.user_data.get('action', '—')}\n"
-        f"Дата: {context.user_data['date']}\n"
-        f"Час: {context.user_data['time']}\n"
-        f"Гостей: {context.user_data['guests']}\n"
-        f"Місце: {context.user_data['cabin']}\n"
-        f"Телефон: {context.user_data['contact']}\n"
-        f"Для запитань: {ADMIN_PHONE}"
-    )
-    bookings.append(summary)
+
+    booking = {
+        'name': context.user_data['name'],
+        'action': context.user_data.get('action', '—'),
+        'date': context.user_data['date'],
+        'time': context.user_data['time'],
+        'guests': context.user_data['guests'],
+        'cabin': context.user_data['cabin'],
+        'contact': context.user_data['contact'],
+        'status': 'Очікує підтвердження',
+        'chat_id': update.message.chat_id
+    }
+    bookings.append(booking)
+
     await update.message.reply_text("✅ Дякуємо! Ми отримали твоє бронювання.")
     await update.message.reply_text("📬 Ми повідомимо тебе, коли бронювання буде підтверджене адміністратором.")
-    await context.bot.send_message(chat_id=update.message.chat_id, text=f"🔔 Бронювання отримано! Очікуй підтвердження.")
-    await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=summary)
+    
+    # Відправляємо адміну приватне повідомлення з кнопками підтвердження
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Підтвердити", callback_data=f"confirm_{len(bookings)-1}"),
+            InlineKeyboardButton("❌ Відхилити", callback_data=f"reject_{len(bookings)-1}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await context.bot.send_message(chat_id=ADMIN_USER_ID, text=format_booking_msg(booking), reply_markup=reply_markup)
+
     return ConversationHandler.END
+
+async def booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data  # приклад: "confirm_0" або "reject_1"
+    action, idx_str = data.split("_")
+    idx = int(idx_str)
+
+    booking = bookings[idx]
+
+    if action == "confirm":
+        booking['status'] = "Підтверджено"
+        await context.bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"✅ Підтверджено бронювання:\n\n{format_booking_msg(booking)}")
+        await context.bot.send_message(chat_id=booking['chat_id'], text="🎉 Ваше бронювання підтверджено! Чекаємо вас.")
+        await query.edit_message_text(f"✅ Бронювання підтверджено:\n\n{format_booking_msg(booking)}")
+
+    elif action == "reject":
+        booking['status'] = "Відхилено"
+        await context.bot.send_message(chat_id=booking['chat_id'], text="❌ Ваше бронювання було відхилено. Зв'яжіться з адміністратором для уточнень.")
+        await query.edit_message_text(f"❌ Бронювання відхилено:\n\n{format_booking_msg(booking)}")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Бронювання скасовано.")
@@ -159,20 +203,22 @@ if __name__ == '__main__':
     app = ApplicationBuilder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('start', start)],
-    states={
-        CHOOSING: [MessageHandler(filters.TEXT, choose_action)],
-        BOOK_DATE: [MessageHandler(filters.TEXT, book_date)],
-        BOOK_TIME: [CallbackQueryHandler(book_time)],
-        GUESTS: [MessageHandler(filters.TEXT, guests)],
-        SELECT_CABIN: [CallbackQueryHandler(select_cabin)],
-        CONTACT_NAME: [MessageHandler(filters.TEXT, contact_name)],
-        CONTACT_PHONE: [MessageHandler(filters.TEXT, contact_phone)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    per_chat=True
-)
+        entry_points=[CommandHandler('start', start)],
+        states={
+            CHOOSING: [MessageHandler(filters.TEXT, choose_action)],
+            BOOK_DATE: [MessageHandler(filters.TEXT, book_date)],
+            BOOK_TIME: [CallbackQueryHandler(book_time)],
+            GUESTS: [MessageHandler(filters.TEXT, guests)],
+            SELECT_CABIN: [CallbackQueryHandler(select_cabin)],
+            CONTACT_NAME: [MessageHandler(filters.TEXT, contact_name)],
+            CONTACT_PHONE: [MessageHandler(filters.TEXT, contact_phone)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_chat=True
+    )
 
     app.add_handler(conv_handler)
+    app.add_handler(CallbackQueryHandler(booking_callback, pattern="^(confirm|reject)_"))
+
     import asyncio
     asyncio.run(app.run_polling())
