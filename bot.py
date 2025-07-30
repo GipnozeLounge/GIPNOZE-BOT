@@ -221,4 +221,4 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(booking_callback, pattern="^(confirm|reject)_"))
 
     import asyncio
-    asyncio.run(app.run_polling())
+    app.run_polling()
