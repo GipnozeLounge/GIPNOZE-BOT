@@ -58,7 +58,7 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Введи своє ім'я, щоб скасувати бронювання:")
         return CANCEL_NAME
 
-    elif action == "👀 Переглянути бронювання (адміну)":
+elif action == "👀 Переглянути бронювання (адміну)":
     if user_id == ADMIN_USER_ID:
         active_bookings = [b for b in bookings if b['status'] in ['Очікує підтвердження', 'Підтверджено']]
         if not active_bookings:
