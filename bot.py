@@ -59,19 +59,23 @@ async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CANCEL_NAME
 
     elif action == "👀 Переглянути бронювання (адміну)":
-        if user_id == ADMIN_USER_ID:
-            if not bookings:
-                await update.message.reply_text("Наразі немає активних бронювань.")
-            else:
-                for i, b in enumerate(bookings, 1):
-                    await update.message.reply_text(f"#{i}: {format_booking_msg(b)}")
+    if user_id == ADMIN_USER_ID:
+        active_bookings = [b for b in bookings if b['status'] in ['Очікує підтвердження', 'Підтверджено']]
+        if not active_bookings:
+            await update.message.reply_text("Наразі немає активних бронювань.")
         else:
-            await update.message.reply_text("Ця функція тільки для адміністратора.")
-        return ConversationHandler.END
-
+            for i, b in enumerate(active_bookings, 1):
+                await update.message.reply_text(
+                    f"🔢 #{i}\n"
+                    f"🗓 {b['date']} ⏰ {b['time']}\n"
+                    f"🏠 {b['cabin']}\n"
+                    f"👤 {b['name']} ({b['contact']})\n"
+                    f"👥 Гостей: {b['guests']}\n"
+                    f"📌 Статус: {b['status']}"
+                )
     else:
-        await update.message.reply_text("Будь ласка, обери дію кнопками меню.")
-        return CHOOSING
+        await update.message.reply_text("Ця функція тільки для адміністратора.")
+    return ConversationHandler.END
 
 async def book_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -218,17 +222,24 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def cancel_booking_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
     user_name = update.message.text.strip()
     canceled = False
     for b in bookings:
-        if b['name'].lower() == user_name.lower() and b['status'] == 'Підтверджено':
+        if b['user_id'] == user_id and b['status'] in ['Очікує підтвердження', 'Підтверджено']:
             b['status'] = 'Скасовано'
             canceled = True
-            await update.message.reply_text(f"Бронювання для {user_name} скасовано.")
-            # Можна додати повідомлення адміну, якщо потрібно
+            await update.message.reply_text(f"✅ Бронювання для {b['name']} на {b['date']} о {b['time']} скасовано.")
+            # Повідомлення адміну
+            await context.bot.send_message(
+                chat_id=ADMIN_USER_ID,
+                text=f"❌ Користувач {b['name']} скасував бронювання на {b['date']} о {b['time']}."
+            )
             break
+
     if not canceled:
-        await update.message.reply_text(f"Бронювання з ім'ям {user_name} не знайдено або воно не підтверджене.")
+        await update.message.reply_text("Бронювання не знайдено або вже скасоване.")
+
     return ConversationHandler.END
 
 def format_booking_msg(booking):
