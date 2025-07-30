@@ -191,23 +191,22 @@ if __name__ == '__main__':
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler('start', start)],
-    states={
-        CHOOSING: [MessageHandler(filters.TEXT, choose_action)],
-        BOOK_DATE: [MessageHandler(filters.TEXT, book_date)],
-        BOOK_TIME: [CallbackQueryHandler(book_time)],
-        GUESTS: [MessageHandler(filters.TEXT, guests)],
-        SELECT_CABIN: [CallbackQueryHandler(select_cabin)],
-        CONTACT_NAME: [MessageHandler(filters.TEXT, contact_name)],
-        CONTACT_PHONE: [MessageHandler(filters.TEXT, contact_phone)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    # пер_chat залишаємо, бо це логічно для юзерів
-    per_chat=True
-)
-
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            CHOOSING: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_action)],
+            BOOK_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, book_date)],
+            BOOK_TIME: [CallbackQueryHandler(book_time)],
+            GUESTS: [MessageHandler(filters.TEXT & ~filters.COMMAND, guests)],
+            SELECT_CABIN: [CallbackQueryHandler(select_cabin)],
+            CONTACT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, contact_name)],
+            CONTACT_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, contact_phone)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_chat=True
+    )
     app.add_handler(conv_handler)
     app.add_handler(CallbackQueryHandler(booking_callback, pattern="^(confirm|reject)_"))
 
-    app.run_polling()
+    import asyncio
+    asyncio.run(app.run_polling())
