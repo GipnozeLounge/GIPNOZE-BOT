@@ -46,35 +46,60 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CHOOSING
 
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    action = update.message.text
-    user_id = update.message.from_user.id
+    query = update.callback_query
+    await query.answer()
+    action = query.data
+    user_id = query.from_user.id
 
-    if action == "📅 Забронювати столик":
-        user_booking_data[user_id] = {}
-        await update.message.reply_text("На яку дату плануєш візит? (формат: 30.07.2025)")
-        return BOOK_DATE
+    if action == "✅ Підтвердити бронювання":
+        booking_id = context.user_data.get('booking_id')
+        if booking_id is not None and 0 <= booking_id < len(bookings):
+            bookings[booking_id]['status'] = 'Підтверджено'
 
-    elif action == "❌ Скасувати бронь":
-        await update.message.reply_text("Введи своє ім'я, щоб скасувати бронювання:")
-        return CANCEL_NAME
-
-elif action == "👀 Переглянути бронювання (адміну)":
-    if user_id == ADMIN_USER_ID:
-        active_bookings = [b for b in bookings if b['status'] in ['Очікує підтвердження', 'Підтверджено']]
-        if not active_bookings:
-            await update.message.reply_text("Наразі немає активних бронювань.")
-        else:
-            for i, b in enumerate(active_bookings, 1):
-                await update.message.reply_text(
-                    f"🔢 #{i}\n"
-                    f"🗓 {b['date']} ⏰ {b['time']}\n"
-                    f"🏠 {b['cabin']}\n"
-                    f"👤 {b['name']} ({b['contact']})\n"
-                    f"👥 Гостей: {b['guests']}\n"
-                    f"📌 Статус: {b['status']}"
+            booking = bookings[booking_id]
+            await context.bot.send_message(
+                chat_id=GROUP_CHAT_ID,
+                text=(
+                    f"🔔 Нова бронь підтверджена!\n\n"
+                    f"📅 Дата: {booking['date']}\n"
+                    f"⏰ Час: {booking['time']}\n"
+                    f"🏠 Кабінка: {booking['cabin']}\n"
+                    f"👤 Ім’я: {booking['name']}\n"
+                    f"📞 Телефон: {booking['contact']}\n"
+                    f"👥 Гостей: {booking['guests']}"
                 )
-    else:
-        await update.message.reply_text("Ця функція тільки для адміністратора.")
+            )
+            await query.edit_message_text("Бронювання підтверджено і надіслано в групу.")
+        else:
+            await query.edit_message_text("Бронювання не знайдено.")
+
+    elif action == "❌ Скасувати бронювання":
+        booking_id = context.user_data.get('booking_id')
+        if booking_id is not None and 0 <= booking_id < len(bookings):
+            del bookings[booking_id]
+            await query.edit_message_text("Бронювання скасовано.")
+        else:
+            await query.edit_message_text("Бронювання не знайдено або вже скасовано.")
+
+    elif action == "👀 Переглянути бронювання (адміну)":
+        if user_id == ADMIN_USER_ID:
+            active_bookings = [b for b in bookings if b['status'] in ['Очікує підтвердження', 'Підтверджено']]
+            if not active_bookings:
+                await query.edit_message_text("Наразі немає активних бронювань.")
+            else:
+                await query.edit_message_text("Ось всі активні бронювання:")
+                for i, b in enumerate(active_bookings, 1):
+                    await query.message.reply_text(
+                        f"🔢 #{i}\n"
+                        f"📅 Дата: {b['date']}\n"
+                        f"⏰ Час: {b['time']}\n"
+                        f"🏠 Кабінка: {b['cabin']}\n"
+                        f"👤 {b['name']} ({b['contact']})\n"
+                        f"👥 Гостей: {b['guests']}\n"
+                        f"📌 Статус: {b['status']}"
+                    )
+        else:
+            await query.edit_message_text("Ця функція тільки для адміністратора.")
     return ConversationHandler.END
 
 async def book_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
