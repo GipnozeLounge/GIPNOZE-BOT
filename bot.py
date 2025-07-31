@@ -96,7 +96,7 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
             if b['user_id'] == user_id and b['status'] in ['Очікує підтвердження', 'Підтверджено']
         ]
         if not user_active_bookings:
-            await update.message.reply_text("У вас немає активних бронювань для скасування.")
+            await update.message.reply_text("У вас немає активних бронювань для скасування.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
             return CHOOSING_MAIN_ACTION
 
         keyboard = []
@@ -115,7 +115,7 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
         if user_id == ADMIN_USER_ID:
             active_bookings = [b for b in bookings if b['status'] in ['Очікує підтвердження', 'Підтверджено']]
             if not active_bookings:
-                await update.message.reply_text("Наразі немає активних бронювань.")
+                await update.message.reply_text("Наразі немає активних бронювань.", reply_markup=get_main_keyboard())
             else:
                 await update.message.reply_text("Ось всі активні бронювання:")
                 for i, b in enumerate(active_bookings, 1):
@@ -128,12 +128,13 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
                         f"👥 Гостей: {b['guests']}\n"
                         f"📌 Статус: {b['status']}"
                     )
+                await update.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
             return CHOOSING_MAIN_ACTION
         else:
-            await update.message.reply_text("Ця функція тільки для адміністратора.")
+            await update.message.reply_text("Ця функція тільки для адміністратора.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
             return CHOOSING_MAIN_ACTION
     else:
-        await update.message.reply_text("Будь ласка, оберіть дію з клавіатури.")
+        await update.message.reply_text("Будь ласка, оберіть дію з клавіатури.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
         return CHOOSING_MAIN_ACTION
 
 async def book_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -283,6 +284,7 @@ async def contact_phone_handler(update: Update, context: ContextTypes.DEFAULT_TY
         print(f"Помилка при відправці повідомлення адміну ({ADMIN_USER_ID}): {e}")
         await update.message.reply_text(f"Виникла помилка при відправці повідомлення адміністратору. Будь ласка, зв'яжіться з нами за номером {ADMIN_PHONE}. Деталі помилки: {e}")
 
+    await update.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повертаємо головну клавіатуру
     return ConversationHandler.END # Завершуємо діалог бронювання
 
 async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -324,6 +326,10 @@ async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     if action_type == "confirm":
         booking['status'] = "Підтверджено"
+
+        # --- ДІАГНОСТИЧНЕ ПОВІДОМЛЕННЯ ---
+        print(f"DEBUG: Booking object before sending to group: {booking}")
+        # --- КІНЕЦЬ ДІАГНОСТИЧНИХ ПОВІДОМЛЕНЬ ---
 
         # Повідомлення в групу адміністраторів (ADMIN_CHAT_ID)
         try:
@@ -383,6 +389,7 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
 
     if not (0 <= idx < len(bookings)):
         await query.edit_message_text("Бронювання не знайдено або вже скасовано.")
+        await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
         return CHOOSING_MAIN_ACTION
 
     booking_to_cancel = bookings[idx]
@@ -390,6 +397,7 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
     # Перевірка, чи користувач намагається скасувати власне бронювання
     if booking_to_cancel['user_id'] != user_id:
         await query.edit_message_text("Ви можете скасувати лише власні бронювання.")
+        await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
         return CHOOSING_MAIN_ACTION
 
     if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
@@ -456,6 +464,5 @@ if __name__ == '__main__':
     # Окремий обробник для callback-запитів від адміністратора
     app.add_handler(CallbackQueryHandler(admin_booking_callback, pattern=r"^(admin_confirm_|admin_reject_)"))
 
-    import asyncio
     # Запускаємо бота
-    asyncio.run(app.run_polling())
+    app.run_polling()
