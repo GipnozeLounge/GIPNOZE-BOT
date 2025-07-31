@@ -6,6 +6,7 @@ from telegram.ext import (
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
+import sqlite3 # Імпортуємо бібліотеку для роботи з SQLite
 
 # Завантажуємо змінні оточення з файлу .env
 load_dotenv()
@@ -14,15 +15,12 @@ load_dotenv()
 CHOOSING_MAIN_ACTION, BOOK_DATE, BOOK_TIME, GUESTS, SELECT_CABIN, CONTACT_NAME, CONTACT_PHONE, CANCEL_PROMPT, ADMIN_VIEW_DATE = range(9)
 
 # Отримуємо токен бота, ID адміністратора та ID групи з .env файлу
-# Це безпечніше, ніж хардкодити їх у коді
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID")) # Ваш Telegram user ID (числовий)
-ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID") # Username групи або ID чату для повідомлень адміністраторам (наприклад, "@gipnoze_lounge_chat" або числовий ID)
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID") # Username групи або ID чату для повідомлень адміністраторам
 ADMIN_PHONE = "+380956232134" # Номер телефону для зв'язку
 
-# Зберігання бронювань у пам'яті.
-# Увага: При перезапуску бота всі дані будуть втрачені!
-# Для продакшн-версії рекомендується використовувати базу даних (наприклад, SQLite, PostgreSQL, Firestore).
-bookings = []
+# Назва файлу бази даних SQLite
+DB_NAME = 'bookings.db'
 
 # Генерація часових слотів з 17:00 до 22:30 включно, з кроком 30 хвилин
 time_slots = []
@@ -47,6 +45,143 @@ CABINS = [
 
 # Тимчасове зберігання даних бронювання для кожного користувача
 user_booking_data = {}
+
+# --- Функції для роботи з базою даних ---
+
+def init_db():
+    """Ініціалізує базу даних, створюючи таблицю 'bookings', якщо вона не існує."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bookings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            guests INTEGER NOT NULL,
+            cabin TEXT NOT NULL,
+            contact TEXT NOT NULL,
+            status TEXT NOT NULL,
+            chat_id INTEGER NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    print("База даних ініціалізована.")
+
+def get_bookings_from_db(filters=None):
+    """Отримує бронювання з бази даних з можливістю фільтрації."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    query = "SELECT id, user_id, name, date, time, guests, cabin, contact, status, chat_id FROM bookings"
+    params = []
+    where_clauses = []
+
+    if filters:
+        if 'user_id' in filters:
+            where_clauses.append("user_id = ?")
+            params.append(filters['user_id'])
+        if 'status' in filters:
+            # Обробка списку статусів
+            if isinstance(filters['status'], list):
+                status_placeholders = ','.join(['?' for _ in filters['status']])
+                where_clauses.append(f"status IN ({status_placeholders})")
+                params.extend(filters['status'])
+            else:
+                where_clauses.append("status = ?")
+                params.append(filters['status'])
+        if 'date' in filters:
+            where_clauses.append("date = ?")
+            params.append(filters['date'])
+        if 'time' in filters:
+            where_clauses.append("time = ?")
+            params.append(filters['time'])
+        if 'cabin' in filters:
+            where_clauses.append("cabin = ?")
+            params.append(filters['cabin'])
+
+
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    bookings_list = []
+    for row in rows:
+        booking = {
+            'id': row[0],
+            'user_id': row[1],
+            'name': row[2],
+            'date': row[3],
+            'time': row[4],
+            'guests': row[5],
+            'cabin': row[6],
+            'contact': row[7],
+            'status': row[8],
+            'chat_id': row[9]
+        }
+        bookings_list.append(booking)
+    return bookings_list
+
+def add_booking_to_db(booking_data):
+    """Додає нове бронювання до бази даних."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO bookings (user_id, name, date, time, guests, cabin, contact, status, chat_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        booking_data['user_id'],
+        booking_data['name'],
+        booking_data['date'],
+        booking_data['time'],
+        booking_data['guests'],
+        booking_data['cabin'],
+        booking_data['contact'],
+        booking_data['status'],
+        booking_data['chat_id']
+    ))
+    booking_id = cursor.lastrowid # Отримуємо ID щойно вставленого запису
+    conn.commit()
+    conn.close()
+    return booking_id
+
+def update_booking_status_in_db(booking_id, new_status):
+    """Оновлює статус бронювання в базі даних за ID."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE bookings SET status = ? WHERE id = ?
+    ''', (new_status, booking_id))
+    conn.commit()
+    conn.close()
+
+def get_booking_by_id(booking_id):
+    """Отримує одне бронювання за його ID."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, user_id, name, date, time, guests, cabin, contact, status, chat_id FROM bookings WHERE id = ?
+    ''', (booking_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {
+            'id': row[0],
+            'user_id': row[1],
+            'name': row[2],
+            'date': row[3],
+            'time': row[4],
+            'guests': row[5],
+            'cabin': row[6],
+            'contact': row[7],
+            'status': row[8],
+            'chat_id': row[9]
+        }
+    return None
 
 # --- Допоміжні функції ---
 
@@ -94,22 +229,18 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text("На яку дату ви хочете забронювати столик? (наприклад, 30.07.2025)")
         return BOOK_DATE
     elif text == "❌ Скасувати бронь":
-        # Перевіряємо, чи є у користувача активні бронювання
-        user_active_bookings = [
-            b for b in bookings
-            if b['user_id'] == user_id and b['status'] in ['Очікує підтвердження', 'Підтверджено']
-        ]
+        # Отримуємо активні бронювання користувача з БД
+        user_active_bookings = get_bookings_from_db(filters={'user_id': user_id, 'status': ['Очікує підтвердження', 'Підтверджено']})
+
         if not user_active_bookings:
             await update.message.reply_text("У вас немає активних бронювань для скасування.", reply_markup=get_main_keyboard())
             return CHOOSING_MAIN_ACTION
 
         keyboard = []
-        for i, booking in enumerate(user_active_bookings):
-            # Зберігаємо індекс бронювання в загальному списку bookings
-            original_idx = bookings.index(booking)
+        for booking in user_active_bookings:
             keyboard.append([InlineKeyboardButton(
                 f"Скасувати: {booking['date']} {booking['time']} - {booking['cabin']}",
-                callback_data=f"cancel_booking_{original_idx}"
+                callback_data=f"cancel_booking_{booking['id']}" # Використовуємо ID з БД
             )])
         keyboard.append([InlineKeyboardButton("Повернутися до головного меню", callback_data="back_to_main")])
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -170,15 +301,14 @@ async def book_time_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer() # Відповідаємо на callback query
 
     user_id = query.from_user.id
-    # Отримуємо час з callback_data (наприклад, "time_18:00")
     selected_time = query.data.split("_")[1]
     user_booking_data[user_id]['time'] = selected_time
 
     date = user_booking_data[user_id]['date']
     time = user_booking_data[user_id]['time']
 
-    # Фільтруємо зайняті кабінки на обрану дату та час
-    busy = [b['cabin'] for b in bookings if b['date'] == date and b['time'] == time and b['status'] in ['Очікує підтвердження', 'Підтверджено']]
+    # Отримуємо зайняті кабінки з БД
+    busy = [b['cabin'] for b in get_bookings_from_db(filters={'date': date, 'time': time, 'status': ['Очікує підтвердження', 'Підтверджено']})]
     available_cabins = [cabin for cabin in CABINS if cabin not in busy]
 
     if not available_cabins:
@@ -207,8 +337,8 @@ async def guests_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     date = user_booking_data[user_id]['date']
     time = user_booking_data[user_id]['time']
 
-    # Повторно фільтруємо зайняті кабінки (на випадок, якщо хтось забронював за цей час)
-    busy = [b['cabin'] for b in bookings if b['date'] == date and b['time'] == time and b['status'] in ['Очікує підтвердження', 'Підтверджено']]
+    # Повторно фільтруємо зайняті кабінки з БД
+    busy = [b['cabin'] for b in get_bookings_from_db(filters={'date': date, 'time': time, 'status': ['Очікує підтвердження', 'Підтверджено']})]
     available_cabins = [cabin for cabin in CABINS if cabin not in busy]
 
     if not available_cabins:
@@ -242,22 +372,24 @@ async def contact_name_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def contact_phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник введення номера телефону та завершення бронювання."""
     user_id = update.message.from_user.id
-    user_booking_data[user_id]['contact'] = update.message.text
-    data = user_booking_data[user_id]
+    user_data = user_booking_data[user_id]
+    user_data['contact'] = update.message.text
 
-    booking = {
+    booking_to_save = {
         'user_id': user_id,
-        'name': data['name'],
-        'date': data['date'],
-        'time': data['time'],
-        'guests': data['guests'],
-        'cabin': data['cabin'],
-        'contact': data['contact'],
+        'name': user_data['name'],
+        'date': user_data['date'],
+        'time': user_data['time'],
+        'guests': user_data['guests'],
+        'cabin': user_data['cabin'],
+        'contact': user_data['contact'],
         'status': 'Очікує підтвердження',
-        'chat_id': update.message.chat_id # Chat ID користувача для надсилання йому повідомлень
+        'chat_id': update.message.chat_id
     }
-    bookings.append(booking)
-    idx = len(bookings) - 1 # Зберігаємо індекс нового бронювання
+    
+    # Додаємо бронювання до БД
+    booking_id = add_booking_to_db(booking_to_save)
+    booking_to_save['id'] = booking_id # Додаємо отриманий ID до словника для подальшого використання
 
     await update.message.reply_text("✅ Дякуємо! Ми отримали твоє бронювання.")
     await update.message.reply_text("📬 Чекаємо на підтвердження адміністратором.")
@@ -265,67 +397,60 @@ async def contact_phone_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # Клавіатура для адміністратора для підтвердження/відхилення
     keyboard = [
         [
-            InlineKeyboardButton("✅ Підтвердити", callback_data=f"admin_confirm_{idx}"),
-            InlineKeyboardButton("❌ Відхилити", callback_data=f"admin_reject_{idx}")
+            InlineKeyboardButton("✅ Підтвердити", callback_data=f"admin_confirm_{booking_id}"),
+            InlineKeyboardButton("❌ Відхилити", callback_data=f"admin_reject_{booking_id}")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # Надіслати адміну для підтвердження
     try:
-        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=format_booking_msg(booking), reply_markup=reply_markup)
+        await context.bot.send_message(chat_id=ADMIN_USER_ID, text=format_booking_msg(booking_to_save), reply_markup=reply_markup)
     except Exception as e:
         print(f"Помилка при відправці повідомлення адміну ({ADMIN_USER_ID}): {e}")
         await update.message.reply_text(f"Виникла помилка при відправці повідомлення адміністратору. Будь ласка, зв'яжіться з нами за номером {ADMIN_PHONE}. Деталі помилки: {e}")
 
-    await update.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повертаємо головну клавіатуру
-    return ConversationHandler.END # Завершуємо діалог бронювання
+    await update.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
+    return ConversationHandler.END
 
 async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник callback-запитів від адміністратора (підтвердження/відхилення)."""
     query = update.callback_query
     await query.answer()
 
-    # --- ДІАГНОСТИЧНІ ПОВІДОМЛЕННЯ ---
     print(f"Отримано callback від адміна. Дані: {query.data}, Користувач: {query.from_user.id}")
-    # --- КІНЕЦЬ ДІАГНОСТИЧНИХ ПОВІДОМЛЕНЬ ---
 
     data = query.data
-    # Очікуємо дані у форматі "admin_confirm_ІНДЕКС" або "admin_reject_ІНДЕКС"
     parts = data.split("_")
     if len(parts) != 3 or parts[0] != "admin":
         print(f"Невірний формат callback даних для адміна: {data}")
         await query.edit_message_text("Невірний формат запиту. Спробуйте ще раз або зверніться до розробника.")
         return
 
-    action_type = parts[1] # "confirm" або "reject"
-    idx = int(parts[2])
+    action_type = parts[1]
+    booking_id = int(parts[2]) # Використовуємо ID з БД
 
-    if not (0 <= idx < len(bookings)):
+    booking = get_booking_by_id(booking_id) # Отримуємо бронювання з БД за ID
+
+    if not booking:
         await query.edit_message_text("Бронювання не знайдено або вже видалено.")
         return
 
-    booking = bookings[idx]
-
-    # Перевіряємо, чи дія виконується адміністратором
     if query.from_user.id != ADMIN_USER_ID:
         print(f"Спроба несанкціонованої дії від {query.from_user.id}. Очікується {ADMIN_USER_ID}.")
         await query.edit_message_text("Ви не маєте прав для виконання цієї дії.")
         return
 
-    # Перевіряємо, чи статус бронювання вже не змінений
     if booking['status'] not in ['Очікує підтвердження']:
         await query.edit_message_text(f"Ця бронь вже '{booking['status']}'.")
         return
 
     if action_type == "confirm":
-        booking['status'] = "Підтверджено"
+        update_booking_status_in_db(booking_id, "Підтверджено") # Оновлюємо статус у БД
+        booking['status'] = "Підтверджено" # Оновлюємо локальний об'єкт для відображення
 
-        # --- ДІАГНОСТИЧНЕ ПОВІДОМЛЕННЯ ---
         print(f"DEBUG: Booking object before sending to group: {booking}")
-        # --- КІНЕЦЬ ДІАГНОСТИЧНИХ ПОВІДОМЛЕНЬ ---
 
-        # Повідомлення в групу адміністраторів (ADMIN_CHAT_ID)
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_CHAT_ID,
@@ -344,26 +469,22 @@ async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_T
             print(f"ПОМИЛКА: Не вдалося надіслати повідомлення в групу {ADMIN_CHAT_ID}. Перевірте, чи бот є адміністратором групи та чи правильний ID/username. Деталі: {e}")
             await query.message.reply_text(f"ПОМИЛКА: Не вдалося надіслати повідомлення в групу. Перевірте дозволи бота в групі або ID групи. Деталі: {e}")
 
-
-        # Повідомлення користувачу
         try:
             await context.bot.send_message(chat_id=booking['chat_id'], text="✅ Ваше бронювання підтверджено!")
         except Exception as e:
             print(f"Помилка при відправці повідомлення користувачу {booking['chat_id']} про підтвердження: {e}")
 
-        # Оновлення повідомлення адміну, щоб кнопки зникли
         await query.edit_message_text(f"✅ Підтверджено:\n\n{format_booking_msg(booking)}")
 
     elif action_type == "reject":
-        booking['status'] = "Відхилено"
+        update_booking_status_in_db(booking_id, "Відхилено") # Оновлюємо статус у БД
+        booking['status'] = "Відхилено" # Оновлюємо локальний об'єкт для відображення
 
-        # Повідомлення користувачу
         try:
             await context.bot.send_message(chat_id=booking['chat_id'], text="❌ Ваше бронювання було відхилено.")
         except Exception as e:
             print(f"Помилка при відправці повідомлення користувачу {booking['chat_id']} про відхилення: {e}")
 
-        # Оновлення повідомлення адміну, щоб кнопки зникли
         await query.edit_message_text(f"❌ Відхилено:\n\n{format_booking_msg(booking)}")
 
 async def admin_view_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -372,21 +493,19 @@ async def admin_view_date_handler(update: Update, context: ContextTypes.DEFAULT_
     date_text = update.message.text
 
     try:
-        # Перевірка формату дати
         datetime.strptime(date_text, "%d.%m.%Y").date()
-        context.user_data['admin_view_date'] = date_text # Зберігаємо дату в контексті користувача для подальшого використання
+        context.user_data['admin_view_date'] = date_text
 
-        bookings_for_date = [b for b in bookings if b['date'] == date_text and b['status'] in ['Очікує підтвердження', 'Підтверджено']]
+        # Отримуємо бронювання на конкретну дату з БД
+        bookings_for_date = get_bookings_from_db(filters={'date': date_text, 'status': ['Очікує підтвердження', 'Підтверджено']})
 
         if not bookings_for_date:
             await update.message.reply_text(f"На {date_text} немає активних бронювань.", reply_markup=get_main_keyboard())
         else:
             await update.message.reply_text(f"Ось бронювання на {date_text}:")
             for i, b in enumerate(bookings_for_date, 1):
-                # Знаходимо оригінальний індекс бронювання в загальному списку bookings
-                original_idx = bookings.index(b)
                 keyboard = [
-                    [InlineKeyboardButton("❌ Скасувати цю бронь", callback_data=f"admin_force_cancel_{original_idx}")]
+                    [InlineKeyboardButton("❌ Скасувати цю бронь", callback_data=f"admin_force_cancel_{b['id']}")] # Використовуємо ID з БД
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(
@@ -403,7 +522,7 @@ async def admin_view_date_handler(update: Update, context: ContextTypes.DEFAULT_
         return CHOOSING_MAIN_ACTION
     except ValueError:
         await update.message.reply_text("Невірний формат дати. Будь ласка, введіть дату у форматі ДД.ММ.РРРР (наприклад, 30.07.2025).")
-        return ADMIN_VIEW_DATE # Залишаємося в цьому стані, щоб адмін міг ввести дату повторно
+        return ADMIN_VIEW_DATE
 
 async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник для примусового скасування бронювання адміністратором."""
@@ -419,20 +538,21 @@ async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text("Ви не маєте прав для виконання цієї дії.")
         return
 
-    action, idx_str = data.split("_", 2) # Очікуємо "admin_force_cancel_ІНДЕКС"
-    idx = int(idx_str)
+    action, idx_str = data.split("_", 2)
+    booking_id = int(idx_str) # Використовуємо ID з БД
 
-    if not (0 <= idx < len(bookings)):
+    booking_to_cancel = get_booking_by_id(booking_id) # Отримуємо бронювання з БД
+
+    if not booking_to_cancel:
         await query.edit_message_text("Бронювання не знайдено або вже видалено.")
         return
 
-    booking_to_cancel = bookings[idx]
-
     if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
-        booking_to_cancel['status'] = 'Скасовано (адміном)'
+        update_booking_status_in_db(booking_id, 'Скасовано (адміном)') # Оновлюємо статус у БД
+        booking_to_cancel['status'] = 'Скасовано (адміном)' # Оновлюємо локальний об'єкт
+
         await query.edit_message_text(f"✅ Бронювання на {booking_to_cancel['date']} о {booking_to_cancel['time']} для {booking_to_cancel['name']} скасовано адміністратором.")
 
-        # Повідомлення користувачу про скасування
         try:
             await context.bot.send_message(
                 chat_id=booking_to_cancel['chat_id'],
@@ -442,7 +562,6 @@ async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAU
         except Exception as e:
             print(f"ПОМИЛКА: Не вдалося надіслати повідомлення користувачу про скасування броні адміном: {e}")
 
-        # Повідомлення в групу про скасування адміном
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_CHAT_ID,
@@ -470,27 +589,27 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
         await query.edit_message_text("Повертаюся до головного меню.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
-    action, idx_str = data.split("_", 1) # Очікуємо "cancel_booking_idx"
-    idx = int(idx_str)
+    action, idx_str = data.split("_", 1)
+    booking_id = int(idx_str) # Використовуємо ID з БД
 
-    if not (0 <= idx < len(bookings)):
+    booking_to_cancel = get_booking_by_id(booking_id) # Отримуємо бронювання з БД
+
+    if not booking_to_cancel:
         await query.edit_message_text("Бронювання не знайдено або вже скасовано.")
-        await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
+        await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
-    booking_to_cancel = bookings[idx]
-
-    # Перевірка, чи користувач намагається скасувати власне бронювання
     if booking_to_cancel['user_id'] != user_id:
         await query.edit_message_text("Ви можете скасувати лише власні бронювання.")
-        await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
+        await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
     if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
-        booking_to_cancel['status'] = 'Скасовано'
+        update_booking_status_in_db(booking_id, 'Скасовано') # Оновлюємо статус у БД
+        booking_to_cancel['status'] = 'Скасовано' # Оновлюємо локальний об'єкт
+
         await query.edit_message_text(f"✅ Бронювання на {booking_to_cancel['date']} о {booking_to_cancel['time']} скасовано.")
 
-        # Повідомлення адміну про скасування
         try:
             await context.bot.send_message(
                 chat_id=ADMIN_USER_ID,
@@ -524,6 +643,8 @@ if __name__ == '__main__':
     if not ADMIN_USER_ID or not ADMIN_CHAT_ID:
         raise ValueError("ADMIN_USER_ID або ADMIN_CHAT_ID не знайдено у файлі .env")
 
+    # Ініціалізуємо базу даних при запуску бота
+    init_db()
 
     app = ApplicationBuilder().token(TOKEN).build()
 
