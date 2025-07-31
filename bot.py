@@ -47,6 +47,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def choose_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+
+    if not query:
+        await update.message.reply_text("Цю дію можна виконати тільки через кнопку.")
+        return
+
     await query.answer()
     action = query.data
     user_id = query.from_user.id
