@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Стани діалогу для ConversationHandler
-CHOOSING_MAIN_ACTION, BOOK_DATE, BOOK_TIME, GUESTS, SELECT_CABIN, CONTACT_NAME, CONTACT_PHONE, CANCEL_PROMPT, CANCEL_CONFIRM = range(9)
+CHOOSING_MAIN_ACTION, BOOK_DATE, BOOK_TIME, GUESTS, SELECT_CABIN, CONTACT_NAME, CONTACT_PHONE, CANCEL_PROMPT, ADMIN_VIEW_DATE = range(9)
 
 # Отримуємо токен бота, ID адміністратора та ID групи з .env файлу
 # Це безпечніше, ніж хардкодити їх у коді
@@ -66,7 +66,11 @@ def format_booking_msg(booking):
 def get_main_keyboard():
     """Повертає головну клавіатуру."""
     return ReplyKeyboardMarkup(
-        [["📅 Забронювати столик", "❌ Скасувати бронь"], ["👀 Переглянути бронювання (адміну)"]],
+        [
+            ["📅 Забронювати столик", "❌ Скасувати бронь"],
+            ["👀 Переглянути бронювання (адміну)", "📸 Instagram"],
+            ["📞 Зв'язатися з адміном"]
+        ],
         resize_keyboard=True
     )
 
@@ -96,7 +100,7 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
             if b['user_id'] == user_id and b['status'] in ['Очікує підтвердження', 'Підтверджено']
         ]
         if not user_active_bookings:
-            await update.message.reply_text("У вас немає активних бронювань для скасування.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
+            await update.message.reply_text("У вас немає активних бронювань для скасування.", reply_markup=get_main_keyboard())
             return CHOOSING_MAIN_ACTION
 
         keyboard = []
@@ -113,28 +117,20 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
         return CANCEL_PROMPT # Переходимо в стан очікування вибору скасування
     elif text == "👀 Переглянути бронювання (адміну)":
         if user_id == ADMIN_USER_ID:
-            active_bookings = [b for b in bookings if b['status'] in ['Очікує підтвердження', 'Підтверджено']]
-            if not active_bookings:
-                await update.message.reply_text("Наразі немає активних бронювань.", reply_markup=get_main_keyboard())
-            else:
-                await update.message.reply_text("Ось всі активні бронювання:")
-                for i, b in enumerate(active_bookings, 1):
-                    await update.message.reply_text(
-                        f"🔢 #{i}\n"
-                        f"📅 Дата: {b['date']}\n"
-                        f"⏰ Час: {b['time']}\n"
-                        f"🏠 Кабінка: {b['cabin']}\n"
-                        f"👤 {b['name']} ({b['contact']})\n"
-                        f"👥 Гостей: {b['guests']}\n"
-                        f"📌 Статус: {b['status']}"
-                    )
-                await update.message.reply_text("Щось ще?", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
-            return CHOOSING_MAIN_ACTION
+            await update.message.reply_text("На яку дату ви хочете переглянути бронювання? (наприклад, 30.07.2025)")
+            return ADMIN_VIEW_DATE
         else:
-            await update.message.reply_text("Ця функція тільки для адміністратора.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
+            await update.message.reply_text("Ця функція тільки для адміністратора.", reply_markup=get_main_keyboard())
             return CHOOSING_MAIN_ACTION
+    elif text == "📸 Instagram":
+        instagram_url = "https://www.instagram.com/gipnoze_lounge?utm_source=ig_web_button_share_sheet&igsh=ZDNlZDc0MzIxNw=="
+        await update.message.reply_text(f"Перейти на нашу сторінку Instagram: {instagram_url}", reply_markup=get_main_keyboard())
+        return CHOOSING_MAIN_ACTION
+    elif text == "📞 Зв'язатися з адміном":
+        await update.message.reply_text(f"Номер телефону адміністратора: {ADMIN_PHONE}", reply_markup=get_main_keyboard())
+        return CHOOSING_MAIN_ACTION
     else:
-        await update.message.reply_text("Будь ласка, оберіть дію з клавіатури.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
+        await update.message.reply_text("Будь ласка, оберіть дію з клавіатури.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
 async def book_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -187,8 +183,6 @@ async def book_time_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not available_cabins:
         await query.edit_message_text("На цей час усі кабінки зайняті. Оберіть інший час або дату.")
-        # Повертаємо користувача до вибору часу або дати
-        # Можна перевести в CHOOSING_MAIN_ACTION або запропонувати повернутися до вибору часу/дати
         await query.message.reply_text("Будь ласка, оберіть інший час або дату з головного меню.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
@@ -372,6 +366,98 @@ async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_T
         # Оновлення повідомлення адміну, щоб кнопки зникли
         await query.edit_message_text(f"❌ Відхилено:\n\n{format_booking_msg(booking)}")
 
+async def admin_view_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник введення дати для перегляду бронювань адміністратором."""
+    user_id = update.message.from_user.id
+    date_text = update.message.text
+
+    try:
+        # Перевірка формату дати
+        datetime.strptime(date_text, "%d.%m.%Y").date()
+        context.user_data['admin_view_date'] = date_text # Зберігаємо дату в контексті користувача для подальшого використання
+
+        bookings_for_date = [b for b in bookings if b['date'] == date_text and b['status'] in ['Очікує підтвердження', 'Підтверджено']]
+
+        if not bookings_for_date:
+            await update.message.reply_text(f"На {date_text} немає активних бронювань.", reply_markup=get_main_keyboard())
+        else:
+            await update.message.reply_text(f"Ось бронювання на {date_text}:")
+            for i, b in enumerate(bookings_for_date, 1):
+                # Знаходимо оригінальний індекс бронювання в загальному списку bookings
+                original_idx = bookings.index(b)
+                keyboard = [
+                    [InlineKeyboardButton("❌ Скасувати цю бронь", callback_data=f"admin_force_cancel_{original_idx}")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_text(
+                    f"🔢 #{i}\n"
+                    f"📅 Дата: {b['date']}\n"
+                    f"⏰ Час: {b['time']}\n"
+                    f"🏠 Кабінка: {b['cabin']}\n"
+                    f"👤 {b['name']} ({b['contact']})\n"
+                    f"👥 Гостей: {b['guests']}\n"
+                    f"📌 Статус: {b['status']}",
+                    reply_markup=reply_markup
+                )
+            await update.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
+        return CHOOSING_MAIN_ACTION
+    except ValueError:
+        await update.message.reply_text("Невірний формат дати. Будь ласка, введіть дату у форматі ДД.ММ.РРРР (наприклад, 30.07.2025).")
+        return ADMIN_VIEW_DATE # Залишаємося в цьому стані, щоб адмін міг ввести дату повторно
+
+async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник для примусового скасування бронювання адміністратором."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+    data = query.data
+    
+    print(f"Отримано callback для примусового скасування: {data} від {user_id}")
+
+    if user_id != ADMIN_USER_ID:
+        await query.edit_message_text("Ви не маєте прав для виконання цієї дії.")
+        return
+
+    action, idx_str = data.split("_", 2) # Очікуємо "admin_force_cancel_ІНДЕКС"
+    idx = int(idx_str)
+
+    if not (0 <= idx < len(bookings)):
+        await query.edit_message_text("Бронювання не знайдено або вже видалено.")
+        return
+
+    booking_to_cancel = bookings[idx]
+
+    if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
+        booking_to_cancel['status'] = 'Скасовано (адміном)'
+        await query.edit_message_text(f"✅ Бронювання на {booking_to_cancel['date']} о {booking_to_cancel['time']} для {booking_to_cancel['name']} скасовано адміністратором.")
+
+        # Повідомлення користувачу про скасування
+        try:
+            await context.bot.send_message(
+                chat_id=booking_to_cancel['chat_id'],
+                text=f"❌ Ваше бронювання на {booking_to_cancel['date']} о {booking_to_cancel['time']} (Кабінка: {booking_to_cancel['cabin']}) було скасовано адміністратором. Для уточнень зв'яжіться за номером {ADMIN_PHONE}."
+            )
+            print(f"Користувачу {booking_to_cancel['chat_id']} надіслано повідомлення про скасування броні адміном.")
+        except Exception as e:
+            print(f"ПОМИЛКА: Не вдалося надіслати повідомлення користувачу про скасування броні адміном: {e}")
+
+        # Повідомлення в групу про скасування адміном
+        try:
+            await context.bot.send_message(
+                chat_id=ADMIN_CHAT_ID,
+                text=f"❌ Адмін {query.from_user.first_name} скасував бронювання: {booking_to_cancel['name']} на {booking_to_cancel['date']} о {booking_to_cancel['time']} (Кабінка: {booking_to_cancel['cabin']})."
+            )
+            print(f"Повідомлення в групу про скасування броні адміном успішно надіслано.")
+        except Exception as e:
+            print(f"ПОМИЛКА: Не вдалося надіслати повідомлення в групу про скасування броні адміном: {e}")
+    else:
+        await query.edit_message_text("Ця бронь вже не є активною або була скасована раніше.")
+    
+    await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
+    return CHOOSING_MAIN_ACTION
+
+
 async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник callback-запитів від користувача для скасування бронювання."""
     query = update.callback_query
@@ -455,14 +541,17 @@ if __name__ == '__main__':
             CONTACT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, contact_name_handler)],
             CONTACT_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, contact_phone_handler)],
             CANCEL_PROMPT: [CallbackQueryHandler(cancel_booking_callback, pattern=r"^(cancel_booking_|back_to_main)")],
+            ADMIN_VIEW_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_view_date_handler)], # Новий стан для адміна
         },
         fallbacks=[CommandHandler('cancel', cancel_conversation), MessageHandler(filters.ALL, fallback_handler)],
         allow_reentry=True, # Дозволяє повторний вхід у діалог
     )
 
     app.add_handler(conv_handler)
-    # Окремий обробник для callback-запитів від адміністратора
+    # Окремий обробник для callback-запитів від адміністратора (підтвердження/відхилення)
     app.add_handler(CallbackQueryHandler(admin_booking_callback, pattern=r"^(admin_confirm_|admin_reject_)"))
+    # Новий обробник для примусового скасування бронювання адміном
+    app.add_handler(CallbackQueryHandler(admin_force_cancel_booking, pattern=r"^admin_force_cancel_"))
 
     # Запускаємо бота
     app.run_polling()
