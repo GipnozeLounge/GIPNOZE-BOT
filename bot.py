@@ -233,7 +233,7 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
         user_active_bookings = get_bookings_from_db(filters={'user_id': user_id, 'status': ['Очікує підтвердження', 'Підтверджено']})
 
         if not user_active_bookings:
-            await update.message.reply_text("У вас немає активних бронювань для скасування.", reply_markup=get_main_keyboard())
+            await update.message.reply_text("У вас немає активних бронювань для скасування.", reply_markup=get_main_keyboard()) # Повернути головну клавіатуру
             return CHOOSING_MAIN_ACTION
 
         keyboard = []
@@ -532,7 +532,7 @@ async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAU
     user_id = query.from_user.id
     data = query.data
     
-    print(f"Отримано callback для примусового скасування: {data} від {user_id}")
+    print(f"DEBUG (Admin Force Cancel): Received callback data: {data} from user {user_id}")
 
     if user_id != ADMIN_USER_ID:
         await query.edit_message_text("Ви не маєте прав для виконання цієї дії.")
@@ -542,6 +542,8 @@ async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAU
     booking_id = int(idx_str) # Використовуємо ID з БД
 
     booking_to_cancel = get_booking_by_id(booking_id) # Отримуємо бронювання з БД
+
+    print(f"DEBUG (Admin Force Cancel): Attempting to cancel booking with ID: {booking_id}. Found booking: {booking_to_cancel}")
 
     if not booking_to_cancel:
         await query.edit_message_text("Бронювання не знайдено або вже видалено.")
@@ -585,6 +587,8 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
     user_id = query.from_user.id
     data = query.data
 
+    print(f"DEBUG (User Cancel): Received callback data: {data} from user {user_id}") # Діагностика: отримані дані
+
     if data == "back_to_main":
         await query.edit_message_text("Повертаюся до головного меню.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
@@ -594,16 +598,20 @@ async def cancel_booking_callback(update: Update, context: ContextTypes.DEFAULT_
 
     booking_to_cancel = get_booking_by_id(booking_id) # Отримуємо бронювання з БД
 
+    print(f"DEBUG (User Cancel): Attempting to cancel booking with ID: {booking_id}. Found booking: {booking_to_cancel}") # Діагностика: чи знайдено бронь
+
     if not booking_to_cancel:
         await query.edit_message_text("Бронювання не знайдено або вже скасовано.")
         await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
+    print(f"DEBUG (User Cancel): Checking user ID match. Callback user: {user_id}, Booking user: {booking_to_cancel['user_id']}") # Діагностика: перевірка ID користувача
     if booking_to_cancel['user_id'] != user_id:
         await query.edit_message_text("Ви можете скасувати лише власні бронювання.")
         await query.message.reply_text("Щось ще?", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
+    print(f"DEBUG (User Cancel): Checking booking status: {booking_to_cancel['status']}") # Діагностика: статус броні
     if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
         update_booking_status_in_db(booking_id, 'Скасовано') # Оновлюємо статус у БД
         booking_to_cancel['status'] = 'Скасовано' # Оновлюємо локальний об'єкт
