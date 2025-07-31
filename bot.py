@@ -117,10 +117,14 @@ async def book_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Невірний формат. Введи дату у форматі 30.07.2025")
         return BOOK_DATE
 
-    keyboard = [[InlineKeyboardButton(time, callback_data=time)] for time in time_slots]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("О котрій годині?", reply_markup=reply_markup)
-    return BOOK_TIME
+    keyboard = [
+    [InlineKeyboardButton("📅 Забронювати", callback_data="📅 Забронювати")],
+    [InlineKeyboardButton("❌ Відмінити бронювання", callback_data="❌ Відмінити бронювання")],
+    [InlineKeyboardButton("👀 Переглянути бронювання (адміну)", callback_data="👀 Переглянути бронювання (адміну)")],
+]
+await update.message.reply_text(
+    "Вітаю! Оберіть дію:",
+    reply_markup=InlineKeyboardMarkup(keyboard)
 
 async def book_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
