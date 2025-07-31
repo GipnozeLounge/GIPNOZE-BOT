@@ -125,6 +125,7 @@ async def book_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 await update.message.reply_text(
     "Вітаю! Оберіть дію:",
     reply_markup=InlineKeyboardMarkup(keyboard)
+)
 
 async def book_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
