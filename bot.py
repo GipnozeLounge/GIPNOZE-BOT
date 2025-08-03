@@ -21,7 +21,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 load_dotenv()
 
 # Стани діалогу для ConversationHandler
-CHOOSING_MAIN_ACTION, CHECK_SAVED_CONTACTS, BOOKING_DATE, BOOKING_TIME, BOOKING_GUESTS, BOOKING_CABIN, BOOKING_NAME, BOOKING_PHONE, ASK_SAVE_CONTACT, ASK_REVIEW_RATING, ASK_REVIEW_TEXT = range(11)
+CHOOSING_MAIN_ACTION, CHECK_SAVED_CONTACTS, BOOKING_DATE, BOOKING_TIME, BOOKING_GUESTS, BOOKING_CABIN, BOOKING_NAME, BOOKING_NICKNAME, BOOKING_PHONE, ASK_SAVE_CONTACT, ASK_REVIEW_RATING, ASK_REVIEW_TEXT = range(12)
 
 # Новий токен бота, наданий користувачем
 TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
@@ -78,6 +78,7 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 name TEXT NOT NULL,
+                nickname TEXT,
                 date TEXT NOT NULL,
                 time TEXT NOT NULL,
                 guests INTEGER NOT NULL,
@@ -120,7 +121,7 @@ def get_bookings_from_db(filters=None):
     try:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
-        query = "SELECT id, user_id, name, date, time, guests, cabin, contact, status, chat_id FROM bookings"
+        query = "SELECT id, user_id, name, nickname, date, time, guests, cabin, contact, status, chat_id FROM bookings"
         params = []
         where_clauses = []
 
@@ -157,13 +158,14 @@ def get_bookings_from_db(filters=None):
                 'id': row[0],
                 'user_id': row[1],
                 'name': row[2],
-                'date': row[3],
-                'time': row[4],
-                'guests': row[5],
-                'cabin': row[6],
-                'contact': row[7],
-                'status': row[8],
-                'chat_id': row[9]
+                'nickname': row[3],
+                'date': row[4],
+                'time': row[5],
+                'guests': row[6],
+                'cabin': row[7],
+                'contact': row[8],
+                'status': row[9],
+                'chat_id': row[10]
             }
             bookings_list.append(booking)
     except sqlite3.Error as e:
@@ -181,11 +183,12 @@ def add_booking_to_db(booking_data):
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT INTO bookings (user_id, name, date, time, guests, cabin, contact, status, chat_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO bookings (user_id, name, nickname, date, time, guests, cabin, contact, status, chat_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             booking_data['user_id'],
             booking_data['name'],
+            booking_data.get('nickname', ''),
             booking_data['date'],
             booking_data['time'],
             booking_data['guests'],
@@ -229,7 +232,7 @@ def get_booking_by_id(booking_id):
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, user_id, name, date, time, guests, cabin, contact, status, chat_id FROM bookings WHERE id = ?
+            SELECT id, user_id, name, nickname, date, time, guests, cabin, contact, status, chat_id FROM bookings WHERE id = ?
         ''', (booking_id,))
         row = cursor.fetchone()
     except sqlite3.Error as e:
@@ -243,13 +246,14 @@ def get_booking_by_id(booking_id):
             'id': row[0],
             'user_id': row[1],
             'name': row[2],
-            'date': row[3],
-            'time': row[4],
-            'guests': row[5],
-            'cabin': row[6],
-            'contact': row[7],
-            'status': row[8],
-            'chat_id': row[9]
+            'nickname': row[3],
+            'date': row[4],
+            'time': row[5],
+            'guests': row[6],
+            'cabin': row[7],
+            'contact': row[8],
+            'status': row[9],
+            'chat_id': row[10]
         }
     return None
 
@@ -307,6 +311,7 @@ def format_booking_msg(booking):
     return (
         f"📅 Нове бронювання:\n"
         f"Ім'я: {booking['name']}\n"
+        f"Нік: {booking.get('nickname', 'не вказано')}\n"
         f"Дата: {booking['date']}\n"
         f"Час: {booking['time']}\n"
         f"Гостей: {booking['guests']}\n"
@@ -389,6 +394,7 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
                         f"⏰ Час: {b['time']}\n"
                         f"🏠 Кабінка: {b['cabin']}\n"
                         f"👤 {b['name']} ({b['contact']})\n"
+                        f"👤 Нік: {b['nickname']}\n"
                         f"👥 Гостей: {b['guests']}\n"
                         f"📌 Статус: {b['status']}",
                         reply_markup=reply_markup
@@ -512,6 +518,13 @@ async def book_name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник введення імені."""
     user_id = update.message.from_user.id
     user_booking_data[user_id]['name'] = update.message.text
+    await update.message.reply_text("Введіть ваш нікнейм у Telegram або Instagram для зв'язку:")
+    return BOOKING_NICKNAME
+
+async def book_nickname_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник введення нікнейма."""
+    user_id = update.message.from_user.id
+    user_booking_data[user_id]['nickname'] = update.message.text
     await update.message.reply_text("Ваш номер телефону? (наприклад, +380991234567)")
     return BOOKING_PHONE
 
@@ -552,6 +565,7 @@ async def save_contact_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     booking_to_save = {
         'user_id': user_id,
         'name': user_data['name'],
+        'nickname': user_data.get('nickname', ''),
         'date': user_data['date'],
         'time': user_data['time'],
         'guests': user_data['guests'],
@@ -627,6 +641,7 @@ async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_T
                 text=(
                     f"✅ Бронювання підтверджено:\n\n"
                     f"Ім'я: {booking['name']}\n"
+                    f"Нік: {booking.get('nickname', 'не вказано')}\n"
                     f"Телефон: {booking['contact']}\n"
                     f"Дата: {booking['date']}\n"
                     f"Час: {booking['time']}\n"
@@ -768,6 +783,9 @@ def main():
             ],
             BOOKING_NAME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, book_name_handler)
+            ],
+            BOOKING_NICKNAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, book_nickname_handler)
             ],
             BOOKING_PHONE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, book_phone_handler)
