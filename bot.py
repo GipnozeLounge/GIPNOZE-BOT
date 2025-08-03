@@ -30,7 +30,7 @@ TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
 ADMIN_USER_ID = 6073809255
 ADMIN_CHAT_ID = "@gipnoze_lounge_chat"
 ADMIN_PHONE = "+380956232134"
-INSTAGRAM_MENU_URL = "https://www.instagram.com/p/C66s6J1L2wT/"  # Посилання на пост з меню
+INSTAGRAM_MENU_URL = "https://www.instagram.com/p/DHf0e6RssrX/?igsh=MXd4ZDJtdWc5cnRtNA=="  # Посилання на пост з меню
 
 # Перевірка наявності токена бота
 if not TOKEN:
