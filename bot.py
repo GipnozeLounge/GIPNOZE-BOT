@@ -21,7 +21,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 load_dotenv()
 
 # Стани діалогу для ConversationHandler
-CHOOSING_MAIN_ACTION, BOOK_DATE, BOOK_TIME, GUESTS, SELECT_CABIN, CONTACT_NAME, CONTACT_PHONE, ADMIN_VIEW_DATE, CHECK_SAVED_CONTACTS, ASK_REVIEW_RATING, ASK_REVIEW_TEXT, BOOKING_FLOW = range(12)
+CHOOSING_MAIN_ACTION, CHECK_SAVED_CONTACTS, BOOKING_DATE, BOOKING_TIME, BOOKING_GUESTS, BOOKING_CABIN, BOOKING_NAME, BOOKING_PHONE, ASK_SAVE_CONTACT, ASK_REVIEW_RATING, ASK_REVIEW_TEXT = range(11)
 
 # Новий токен бота, наданий користувачем
 TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
@@ -367,12 +367,11 @@ async def handle_main_menu_choice(update: Update, context: ContextTypes.DEFAULT_
             return CHECK_SAVED_CONTACTS
         else:
             await update.message.reply_text("На яку дату ви хочете забронювати столик?", reply_markup=generate_calendar_keyboard())
-            return BOOKING_FLOW
+            return BOOKING_DATE
 
     elif text == "👀 Переглянути бронювання (адміну)":
         if user_id == ADMIN_USER_ID:
             # Нова опція для адміна: перегляд усіх активних бронювань
-            bookings_today = get_bookings_from_db(filters={'date': datetime.now().strftime('%d.%m.%Y'), 'status': ['Очікує підтвердження', 'Підтверджено']})
             all_active_bookings = get_bookings_from_db(filters={'status': ['Очікує підтвердження', 'Підтверджено']})
             
             if not all_active_bookings:
@@ -433,113 +432,105 @@ async def check_saved_contacts_handler(update: Update, context: ContextTypes.DEF
         user_booking_data[user_id]['contact'] = user_contact['contact']
         await query.edit_message_text("Добре, я використав ваші збережені дані.")
         await query.message.reply_text("Тепер оберіть дату бронювання:", reply_markup=generate_calendar_keyboard())
-        return BOOKING_FLOW
     elif query.data == "enter_new_contacts":
         await query.edit_message_text("Оберіть дату бронювання:", reply_markup=generate_calendar_keyboard())
-        return BOOKING_FLOW
     
-    return CHECK_SAVED_CONTACTS
+    return BOOKING_DATE
 
-async def booking_flow_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Основний обробник для потоку бронювання (календар, час, гості, кабінка)."""
+async def book_date_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник вибору дати бронювання."""
     query = update.callback_query
     await query.answer()
-
     user_id = query.from_user.id
-    data = query.data
-
-    if data.startswith("date_"):
-        date_text = data.split("_")[1]
-        try:
-            booking_date = datetime.strptime(date_text, "%d.%m.%Y").date()
-            user_booking_data[user_id]['date'] = date_text
-
-            keyboard = []
-            for i in range(0, len(time_slots), 4):
-                row = []
-                for slot in time_slots[i:i+4]:
-                    row.append(InlineKeyboardButton(slot, callback_data=f"time_{slot}"))
-                keyboard.append(row)
-
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text("Оберіть час:", reply_markup=reply_markup)
-            return BOOKING_FLOW
-        except BadRequest as e:
-            logging.error(f"Помилка при редагуванні повідомлення: {e}")
-            await query.message.reply_text("Виникла помилка. Будь ласка, почніть бронювання знову.", reply_markup=get_main_keyboard())
-            return CHOOSING_MAIN_ACTION
     
-    elif data.startswith("time_"):
-        selected_time = data.split("_")[1]
-        user_booking_data[user_id]['time'] = selected_time
-        await query.edit_message_text(f"Ви обрали {user_booking_data[user_id]['date']} о {selected_time}.\nСкільки вас буде?")
-        return BOOKING_FLOW
+    date_text = query.data.split("_")[1]
+    user_booking_data[user_id]['date'] = date_text
 
-    elif data.startswith("cabin_"):
-        selected_cabin = data.split("cabin_")[1]
-        user_booking_data[user_id]['cabin'] = selected_cabin
-        await query.edit_message_text("Як вас звати?")
-        return BOOKING_FLOW
+    keyboard = []
+    for i in range(0, len(time_slots), 4):
+        row = []
+        for slot in time_slots[i:i+4]:
+            row.append(InlineKeyboardButton(slot, callback_data=f"time_{slot}"))
+        keyboard.append(row)
 
-    return BOOKING_FLOW
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("Оберіть час:", reply_markup=reply_markup)
+    return BOOKING_TIME
 
-async def booking_text_input_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник текстових відповідей під час потоку бронювання (гості, ім'я, телефон)."""
+async def book_time_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник вибору часу бронювання."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    selected_time = query.data.split("_")[1]
+    user_booking_data[user_id]['time'] = selected_time
+    await query.edit_message_text(f"Ви обрали {user_booking_data[user_id]['date']} о {selected_time}.\nСкільки вас буде чоловік?")
+    return BOOKING_GUESTS
+
+async def book_guests_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник введення кількості гостей."""
     user_id = update.message.from_user.id
-    current_state = context.user_data.get('state')
+    guests_text = update.message.text
+    try:
+        num_guests = int(guests_text)
+        if num_guests <= 0:
+            await update.message.reply_text("Кількість гостей має бути позитивним числом. Будь ласка, введіть коректну кількість.")
+            return BOOKING_GUESTS
+        user_booking_data[user_id]['guests'] = num_guests
+    except (ValueError, TypeError):
+        await update.message.reply_text("Невірний формат. Будь ласка, введіть кількість гостей числом.")
+        return BOOKING_GUESTS
 
-    if current_state == GUESTS:
-        guests_text = update.message.text
-        try:
-            num_guests = int(guests_text)
-            if num_guests <= 0:
-                await update.message.reply_text("Кількість гостей має бути позитивним числом. Будь ласка, введіть коректну кількість.")
-                return GUESTS
-            user_booking_data[user_id]['guests'] = num_guests
-        except (ValueError, TypeError):
-            await update.message.reply_text("Невірний формат. Будь ласка, введіть кількість гостей числом.")
-            return GUESTS
+    date = user_booking_data[user_id]['date']
+    time = user_booking_data[user_id]['time']
+    busy = [b['cabin'] for b in get_bookings_from_db(filters={'date': date, 'time': time, 'status': ['Очікує підтвердження', 'Підтверджено']})]
+    available_cabins = [cabin for cabin in CABINS if cabin not in busy]
 
-        date = user_booking_data[user_id]['date']
-        time = user_booking_data[user_id]['time']
-        busy = [b['cabin'] for b in get_bookings_from_db(filters={'date': date, 'time': time, 'status': ['Очікує підтвердження', 'Підтверджено']})]
-        available_cabins = [cabin for cabin in CABINS if cabin not in busy]
+    if not available_cabins:
+        await update.message.reply_text("На жаль, на цей час усі кабінки зайняті. Будь ласка, спробуйте інший час або дату.")
+        await update.message.reply_text("Повертаю вас до головного меню.", reply_markup=get_main_keyboard())
+        return CHOOSING_MAIN_ACTION
+    
+    keyboard = [[InlineKeyboardButton(cabin, callback_data=f"cabin_{cabin}")] for cabin in available_cabins]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Оберіть місце або зону:", reply_markup=reply_markup)
+    return BOOKING_CABIN
 
-        if not available_cabins:
-            await update.message.reply_text("На жаль, на цей час усі кабінки зайняті. Будь ласка, спробуйте інший час або дату.")
-            await update.message.reply_text("Повертаю вас до головного меню.", reply_markup=get_main_keyboard())
-            return CHOOSING_MAIN_ACTION
-        
-        keyboard = [[InlineKeyboardButton(cabin, callback_data=f"cabin_{cabin}")] for cabin in available_cabins]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("Оберіть місце або зону:", reply_markup=reply_markup)
-        context.user_data['state'] = SELECT_CABIN
-        return BOOKING_FLOW
+async def book_cabin_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник вибору кабінки."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    
+    selected_cabin = query.data.split("cabin_")[1]
+    user_booking_data[user_id]['cabin'] = selected_cabin
+    await query.edit_message_text("Як вас звати?")
+    return BOOKING_NAME
 
-    elif current_state == CONTACT_NAME:
-        user_booking_data[user_id]['name'] = update.message.text
-        await update.message.reply_text("Ваш номер телефону? (наприклад, +380991234567)")
-        context.user_data['state'] = CONTACT_PHONE
-        return BOOKING_FLOW
+async def book_name_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник введення імені."""
+    user_id = update.message.from_user.id
+    user_booking_data[user_id]['name'] = update.message.text
+    await update.message.reply_text("Ваш номер телефону? (наприклад, +380991234567)")
+    return BOOKING_PHONE
 
-    elif current_state == CONTACT_PHONE:
-        user_data = user_booking_data.get(user_id)
-        if not user_data or 'name' not in user_data:
-            await update.message.reply_text("Дані бронювання втрачені. Будь ласка, почніть знову.", reply_markup=get_main_keyboard())
-            return CHOOSING_MAIN_ACTION
+async def book_phone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробник введення телефону та запиту про збереження контактів."""
+    user_id = update.message.from_user.id
+    user_data = user_booking_data.get(user_id)
+    if not user_data or 'name' not in user_data:
+        await update.message.reply_text("Дані бронювання втрачені. Будь ласка, почніть знову.", reply_markup=get_main_keyboard())
+        return CHOOSING_MAIN_ACTION
 
-        user_data['contact'] = update.message.text
-        
-        # Запитуємо, чи потрібно зберегти контакти
-        keyboard = [
-            [InlineKeyboardButton("✅ Так, зберегти", callback_data="save_contact_yes")],
-            [InlineKeyboardButton("❌ Ні, не зберігати", callback_data="save_contact_no")]
-        ]
-        await update.message.reply_text("Хочете зберегти ці контактні дані для наступних бронювань?", reply_markup=InlineKeyboardMarkup(keyboard))
-        context.user_data['state'] = None # Скидаємо стан, щоб не заважав
-        return BOOKING_FLOW
-        
-    return CHOOSING_MAIN_ACTION
+    user_data['contact'] = update.message.text
+    
+    keyboard = [
+        [InlineKeyboardButton("✅ Так, зберегти", callback_data="save_contact_yes")],
+        [InlineKeyboardButton("❌ Ні, не зберігати", callback_data="save_contact_no")]
+    ]
+    await update.message.reply_text("Хочете зберегти ці контактні дані для наступних бронювань?", reply_markup=InlineKeyboardMarkup(keyboard))
+    return ASK_SAVE_CONTACT
 
 async def save_contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник вибору щодо збереження контактів після бронювання."""
@@ -748,6 +739,9 @@ def main():
 
     application = ApplicationBuilder().token(TOKEN).build()
     
+    # Видаляємо будь-який існуючий webhook для уникнення Conflict помилок
+    application.bot.delete_webhook()
+
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
@@ -760,14 +754,26 @@ def main():
             CHECK_SAVED_CONTACTS: [
                 CallbackQueryHandler(check_saved_contacts_handler, pattern="^(use_saved_contacts|enter_new_contacts)$")
             ],
-            BOOKING_FLOW: [
-                CallbackQueryHandler(booking_flow_handler, pattern="^date_"),
-                CallbackQueryHandler(booking_flow_handler, pattern="^time_"),
-                CallbackQueryHandler(booking_flow_handler, pattern="^cabin_"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, booking_text_input_handler)
+            BOOKING_DATE: [
+                CallbackQueryHandler(book_date_handler, pattern="^date_")
             ],
-            CONTACT_PHONE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, booking_text_input_handler)
+            BOOKING_TIME: [
+                CallbackQueryHandler(book_time_handler, pattern="^time_")
+            ],
+            BOOKING_GUESTS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, book_guests_handler)
+            ],
+            BOOKING_CABIN: [
+                CallbackQueryHandler(book_cabin_handler, pattern="^cabin_")
+            ],
+            BOOKING_NAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, book_name_handler)
+            ],
+            BOOKING_PHONE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, book_phone_handler)
+            ],
+            ASK_SAVE_CONTACT: [
+                CallbackQueryHandler(save_contact_handler, pattern="^(save_contact_yes|save_contact_no)$")
             ],
             ASK_REVIEW_RATING: [
                 CallbackQueryHandler(ask_review_rating_handler, pattern="^rating_")
@@ -781,15 +787,10 @@ def main():
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CallbackQueryHandler(save_contact_handler, pattern="^(save_contact_yes|save_contact_no)$"))
     application.add_handler(CallbackQueryHandler(admin_booking_callback, pattern="^admin_(confirm|reject)_"))
     application.add_handler(CallbackQueryHandler(admin_force_cancel_booking, pattern="^admin_force_cancel_"))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
     
-    # Відстежуємо стан для текстових відповідей в потоці бронювання
-    # Ця функція допомагає коректно обробляти текстові відповіді
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: c.user_data.update({'state': u.message.text.strip()}) or ConversationHandler.END))
-
     logging.info("Бот запущено...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
