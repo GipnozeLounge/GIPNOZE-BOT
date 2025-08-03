@@ -23,7 +23,7 @@ load_dotenv()
 CHOOSING_MAIN_ACTION, BOOK_DATE, BOOK_TIME, GUESTS, SELECT_CABIN, CONTACT_NAME, CONTACT_PHONE, ADMIN_VIEW_DATE = range(8)
 
 # Новий токен бота, наданий користувачем
-TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
+TOKEN = "8351072049:AAHuWeKXsg2kIz0CGVzctq1xjIfLT9JHRU"
 
 # Нові дані адміністратора
 ADMIN_USER_ID = 6073809255
@@ -332,26 +332,14 @@ async def book_time_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     selected_time = query.data.split("_")[1]
     
     if 'date' not in user_booking_data.get(user_id, {}):
-        await query.edit_message_text("Щось пішло не так. Будь ласка, почніть бронювання знову.", reply_markup=get_main_keyboard())
+        await query.message.reply_text("Щось пішло не так. Будь ласка, почніть бронювання знову.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
     user_booking_data[user_id]['time'] = selected_time
 
-    date = user_booking_data[user_id]['date']
-    time = user_booking_data[user_id]['time']
-
-    busy = [b['cabin'] for b in get_bookings_from_db(filters={'date': date, 'time': time, 'status': ['Очікує підтвердження', 'Підтверджено']})]
-    available_cabins = [cabin for cabin in CABINS if cabin not in busy]
-
-    if not available_cabins:
-        await query.edit_message_text("На цей час усі кабінки зайняті. Оберіть інший час або дату.")
-        await query.message.reply_text("Повертаю вас до головного меню.", reply_markup=get_main_keyboard())
-        return CHOOSING_MAIN_ACTION
-
-    keyboard = [[InlineKeyboardButton(cabin, callback_data=f"cabin_{cabin}")] for cabin in available_cabins]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text("Оберіть місце або зону:", reply_markup=reply_markup)
-    return SELECT_CABIN
+    # Редагуємо повідомлення з часом на нове повідомлення
+    await query.edit_message_text(f"Ви обрали {selected_time}. Тепер, скільки вас буде?", reply_markup=None)
+    return GUESTS
 
 async def guests_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник введення кількості гостей."""
@@ -375,7 +363,7 @@ async def guests_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     available_cabins = [cabin for cabin in CABINS if cabin not in busy]
 
     if not available_cabins:
-        await update.message.reply_text("На жаль, поки ви вводили дані, всі кабінки на цей час стали зайнятими. Будь ласка, спробуйте інший час або дату.")
+        await update.message.reply_text("На жаль, на цей час усі кабінки зайняті. Будь ласка, спробуйте інший час або дату.")
         await update.message.reply_text("Повертаю вас до головного меню.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
@@ -393,7 +381,8 @@ async def select_cabin_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     selected_cabin = query.data.split("_")[1]
     
     if 'guests' not in user_booking_data.get(user_id, {}):
-        await query.edit_message_text("Щось пішло не так. Будь ласка, почніть бронювання знову.", reply_markup=get_main_keyboard())
+        # Відправка нового повідомлення замість редагування, щоб уникнути помилки
+        await query.message.reply_text("Дані бронювання втрачені. Будь ласка, почніть бронювання знову.", reply_markup=get_main_keyboard())
         return CHOOSING_MAIN_ACTION
 
     user_booking_data[user_id]['cabin'] = selected_cabin
@@ -642,4 +631,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
