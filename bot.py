@@ -701,7 +701,7 @@ async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAU
 
     if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
         update_booking_status_in_db(booking_id, 'Скасовано (адміном)')
-        booking_to_cancel['status'] = 'Скасовано (адміном)')
+        booking_to_cancel['status'] = 'Скасовано (адміном)'
 
         await query.edit_message_text(f"✅ Бронювання на {booking_to_cancel['date']} о {booking_to_cancel['time']} для {booking_to_cancel['name']} скасовано адміністратором.")
 
