@@ -802,7 +802,7 @@ async def main():
         },
         fallbacks=[
             CommandHandler("cancel", cancel_review, filters=filters.ChatType.PRIVATE),
-            MessageHandler(filters.COMMAND, start, filters=filters.ChatType.PRIVATE),
+            MessageHandler(filters.COMMAND & filters.ChatType.PRIVATE, start),
             MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, unknown)
         ]
     )
