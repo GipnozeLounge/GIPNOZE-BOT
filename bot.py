@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import sqlite3
 import logging
 from telegram.error import BadRequest
+import asyncio
 
 # Налаштовуємо логування для діагностики
 logging.basicConfig(
@@ -23,10 +24,10 @@ load_dotenv()
 # Стани діалогу для ConversationHandler
 CHOOSING_MAIN_ACTION, CHECK_SAVED_CONTACTS, BOOKING_DATE, BOOKING_TIME, BOOKING_GUESTS, BOOKING_CABIN, BOOKING_NAME, BOOKING_NICKNAME, BOOKING_PHONE, ASK_SAVE_CONTACT, ASK_REVIEW_RATING, ASK_REVIEW_TEXT = range(12)
 
-# Новий токен бота, наданий користувачем
+# Виправлений токен бота, наданий користувачем
 TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
 
-# Нові дані адміністратора
+# Дані адміністратора
 ADMIN_USER_ID = 6073809255
 ADMIN_CHAT_ID = "@gipnoze_lounge_chat" # Цей ID тепер використовується лише як довідковий
 ADMIN_PHONE = "+380956232134"
@@ -750,14 +751,14 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text="Вибачте, я не розумію цієї команди. Будь ласка, скористайтесь меню."
     )
 
-def main():
-    """Основна функція для запуску бота."""
+async def main():
+    """Основна асинхронна функція для запуску бота."""
     init_db()
 
     application = ApplicationBuilder().token(TOKEN).build()
     
     # Видаляємо будь-який існуючий webhook для уникнення Conflict помилок
-    application.bot.delete_webhook()
+    await application.bot.delete_webhook()
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -815,5 +816,4 @@ def main():
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
-    main()
-
+    asyncio.run(main())
