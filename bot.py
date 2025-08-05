@@ -799,7 +799,7 @@ async def main():
             ASK_REVIEW_TEXT: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, ask_review_text_handler)
             ]
-        ],
+        },
         fallbacks=[
             CommandHandler("cancel", cancel_review, filters=filters.ChatType.PRIVATE),
             MessageHandler(filters.COMMAND, start, filters=filters.ChatType.PRIVATE),
