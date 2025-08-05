@@ -24,11 +24,11 @@ load_dotenv()
 CHOOSING_MAIN_ACTION, CHECK_SAVED_CONTACTS, BOOKING_DATE, BOOKING_TIME, BOOKING_GUESTS, BOOKING_CABIN, BOOKING_NAME, BOOKING_NICKNAME, BOOKING_PHONE, ASK_SAVE_CONTACT, ASK_REVIEW_RATING, ASK_REVIEW_TEXT = range(12)
 
 # Новий токен бота, наданий користувачем
-TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
+TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CG3ctq1xjIfLT9JHRU"
 
 # Нові дані адміністратора
 ADMIN_USER_ID = 6073809255
-ADMIN_CHAT_ID = "@gipnoze_lounge_chat"
+ADMIN_CHAT_ID = "@gipnoze_lounge_chat" # Цей ID тепер використовується лише як довідковий
 ADMIN_PHONE = "+380956232134"
 INSTAGRAM_MENU_URL = "https://www.instagram.com/p/DHf0e6RssrX/?igsh=MXd4ZDJtdWc5cnRtNA=="  # Посилання на пост з меню
 
@@ -588,6 +588,7 @@ async def save_contact_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        # Відправляємо повідомлення про нове бронювання тільки адміністратору в особистий чат
         try:
             await context.bot.send_message(chat_id=ADMIN_USER_ID, text=format_booking_msg(booking_to_save), reply_markup=reply_markup)
         except Exception as e:
@@ -636,8 +637,9 @@ async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_T
         booking['status'] = "Підтверджено"
 
         try:
+            # Надсилаємо повідомлення про підтвердження безпосередньо адміністратору
             await context.bot.send_message(
-                chat_id=ADMIN_CHAT_ID,
+                chat_id=ADMIN_USER_ID,
                 text=(
                     f"✅ Бронювання підтверджено:\n\n"
                     f"Ім'я: {booking['name']}\n"
@@ -649,9 +651,9 @@ async def admin_booking_callback(update: Update, context: ContextTypes.DEFAULT_T
                     f"Гостей: {booking['guests']}"
                 )
             )
-            logging.info(f"Повідомлення про підтвердження успішно надіслано в групу: {ADMIN_CHAT_ID}")
+            logging.info(f"Повідомлення про підтвердження успішно надіслано адміністратору: {ADMIN_USER_ID}")
         except Exception as e:
-            logging.error(f"ПОМИЛКА: Не вдалося надіслати повідомлення в групу {ADMIN_CHAT_ID}: {e}")
+            logging.error(f"ПОМИЛКА: Не вдалося надіслати повідомлення адміністратору {ADMIN_USER_ID}: {e}")
 
         try:
             await context.bot.send_message(chat_id=booking['chat_id'], text="✅ Ваше бронювання підтверджено!")
@@ -759,8 +761,8 @@ def main():
 
     conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("start", start),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu_choice)
+            CommandHandler("start", start, filters=filters.ChatType.PRIVATE),
+            MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_main_menu_choice)
         ],
         states={
             CHOOSING_MAIN_ACTION: [
@@ -801,7 +803,7 @@ def main():
                 CommandHandler("cancel", cancel_review)
             ]
         },
-        fallbacks=[CommandHandler("start", start)]
+        fallbacks=[CommandHandler("start", start, filters=filters.ChatType.PRIVATE)]
     )
 
     application.add_handler(conv_handler)
