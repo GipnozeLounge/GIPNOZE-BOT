@@ -1,12 +1,15 @@
 # python-telegram-bot v20.x
-import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ConversationHandler, ContextTypes, filters, CallbackQueryHandler
+)
 from datetime import datetime, date, timedelta
 import os
 from dotenv import load_dotenv
 import sqlite3
 import logging
+from telegram.error import BadRequest
 import asyncio
 
 # Налаштовуємо логування для діагностики
@@ -21,11 +24,12 @@ load_dotenv()
 # Стани діалогу для ConversationHandler
 CHOOSING_MAIN_ACTION, CHECK_SAVED_CONTACTS, BOOKING_DATE, BOOKING_TIME, BOOKING_GUESTS, BOOKING_CABIN, BOOKING_NAME, BOOKING_NICKNAME, BOOKING_PHONE, ASK_SAVE_CONTACT, ASK_REVIEW_RATING, ASK_REVIEW_TEXT = range(12)
 
-# Використовуємо наданий користувачем токен
+# Виправлений токен бота, наданий користувачем
 TOKEN = "8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU"
 
 # Дані адміністратора
 ADMIN_USER_ID = 6073809255
+ADMIN_CHAT_ID = "@gipnoze_lounge_chat" # Цей ID тепер використовується лише як довідковий
 ADMIN_PHONE = "+380956232134"
 INSTAGRAM_MENU_URL = "https://www.instagram.com/p/DHf0e6RssrX/?igsh=MXd4ZDJtdWc5cnRtNA=="  # Посилання на пост з меню
 
@@ -39,8 +43,8 @@ DB_NAME = 'bookings.db'
 
 # Генерація часових слотів з 17:00 до 22:30 включно, з кроком 30 хвилин
 time_slots = []
-for h in range(17, 23):  # Години від 17 до 22
-    for m in (0, 30):  # Хвилини 0 або 30
+for h in range(17, 23): # Години від 17 до 22
+    for m in (0, 30): # Хвилини 0 або 30
         time_slots.append(f"{h:02d}:{m:02d}")
 
 CABINS = [
@@ -696,9 +700,8 @@ async def admin_force_cancel_booking(update: Update, context: ContextTypes.DEFAU
         return
 
     if booking_to_cancel['status'] in ['Очікує підтвердження', 'Підтверджено']:
-        # Виправлено помилку в цьому рядку
         update_booking_status_in_db(booking_id, 'Скасовано (адміном)')
-        booking_to_cancel['status'] = 'Скасовано (адміном)'
+        booking_to_cancel['status'] = 'Скасовано (адміном)')
 
         await query.edit_message_text(f"✅ Бронювання на {booking_to_cancel['date']} о {booking_to_cancel['time']} для {booking_to_cancel['name']} скасовано адміністратором.")
 
@@ -752,12 +755,12 @@ async def main():
     """Основна асинхронна функція для запуску бота."""
     init_db()
 
-    application = Application.builder().token("8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU").build()
+    application = ApplicationBuilder().token(TOKEN).build()
     
     conv_handler = ConversationHandler(
         entry_points=[
-            CommandHandler("start", start),
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu_choice)
+            CommandHandler("start", start, filters=filters.ChatType.PRIVATE),
+            MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_main_menu_choice)
         ],
         states={
             CHOOSING_MAIN_ACTION: [
@@ -798,18 +801,16 @@ async def main():
                 CommandHandler("cancel", cancel_review)
             ]
         },
-        fallbacks=[
-            CommandHandler("cancel", cancel_review)
-        ]
+        fallbacks=[CommandHandler("start", start, filters=filters.ChatType.PRIVATE)]
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CallbackQueryHandler(admin_booking_callback, pattern="^admin_"))
+    application.add_handler(CallbackQueryHandler(admin_booking_callback, pattern="^admin_(confirm|reject)_"))
     application.add_handler(CallbackQueryHandler(admin_force_cancel_booking, pattern="^admin_force_cancel_"))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
+    
+    logging.info("Бот запущено...")
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-    logging.info("Бот запущено!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+    main()
