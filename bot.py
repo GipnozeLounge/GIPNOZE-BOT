@@ -764,7 +764,7 @@ async def main():
         ],
         states={
             CHOOSING_MAIN_ACTION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu_choice)
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, handle_main_menu_choice)
             ],
             CHECK_SAVED_CONTACTS: [
                 CallbackQueryHandler(check_saved_contacts_handler, pattern="^(use_saved_contacts|enter_new_contacts)$")
@@ -776,39 +776,43 @@ async def main():
                 CallbackQueryHandler(book_time_handler, pattern="^time_")
             ],
             BOOKING_GUESTS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, book_guests_handler)
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, book_guests_handler)
             ],
             BOOKING_CABIN: [
                 CallbackQueryHandler(book_cabin_handler, pattern="^cabin_")
             ],
             BOOKING_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, book_name_handler)
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, book_name_handler)
             ],
             BOOKING_NICKNAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, book_nickname_handler)
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, book_nickname_handler)
             ],
             BOOKING_PHONE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, book_phone_handler)
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, book_phone_handler)
             ],
             ASK_SAVE_CONTACT: [
-                CallbackQueryHandler(save_contact_handler, pattern="^(save_contact_yes|save_contact_no)$")
+                CallbackQueryHandler(save_contact_handler, pattern="^save_contact_(yes|no)$")
             ],
             ASK_REVIEW_RATING: [
                 CallbackQueryHandler(ask_review_rating_handler, pattern="^rating_")
             ],
             ASK_REVIEW_TEXT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_review_text_handler),
-                CommandHandler("cancel", cancel_review)
+                MessageHandler(filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, ask_review_text_handler)
             ]
-        },
-        fallbacks=[CommandHandler("start", start, filters=filters.ChatType.PRIVATE)]
+        ],
+        fallbacks=[
+            CommandHandler("cancel", cancel_review, filters=filters.ChatType.PRIVATE),
+            MessageHandler(filters.COMMAND, start, filters=filters.ChatType.PRIVATE),
+            MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, unknown)
+        ]
     )
 
     application.add_handler(conv_handler)
-    application.add_handler(CallbackQueryHandler(admin_booking_callback, pattern="^admin_(confirm|reject)_"))
-    application.add_handler(CallbackQueryHandler(admin_force_cancel_booking, pattern="^admin_force_cancel_"))
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
+    application.add_handler(CallbackQueryHandler(admin_booking_callback, pattern="^admin_(confirm|reject)_.+"))
+    application.add_handler(CallbackQueryHandler(admin_force_cancel_booking, pattern="^admin_force_cancel_.+"))
+    application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT | filters.COMMAND), unknown))
     
+        
     logging.info("Бот запущено...")
     await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
