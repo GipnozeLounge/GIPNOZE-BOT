@@ -1,8 +1,6 @@
 # python-telegram-bot v20.x
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    ConversationHandler, ContextTypes, filters, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, ContextTypes
 )
 from datetime import datetime, date, timedelta
 import os
@@ -754,7 +752,7 @@ async def main():
     """Основна асинхронна функція для запуску бота."""
     init_db()
 
-    application = ApplicationBuilder().token(TOKEN).build()
+    application = Application.builder().token("8351072049:AAHuWeKXsg2kIzQ0CGVzctq1xjIfLT9JHRU").build()
     
     conv_handler = ConversationHandler(
         entry_points=[
