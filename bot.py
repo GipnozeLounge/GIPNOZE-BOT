@@ -757,9 +757,6 @@ async def main():
 
     application = ApplicationBuilder().token(TOKEN).build()
     
-    # Видаляємо будь-який існуючий webhook для уникнення Conflict помилок
-    await application.bot.delete_webhook()
-
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start, filters=filters.ChatType.PRIVATE),
@@ -813,7 +810,7 @@ async def main():
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
     
     logging.info("Бот запущено...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     asyncio.run(main())
