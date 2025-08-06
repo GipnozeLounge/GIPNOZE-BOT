@@ -9,8 +9,8 @@ import os
 from dotenv import load_dotenv
 import sqlite3
 import logging
-from telegram.error import BadRequest
 import asyncio
+from telegram.error import BadRequest
 
 # Налаштовуємо логування для діагностики
 logging.basicConfig(
@@ -754,8 +754,9 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     """Основна асинхронна функція для запуску бота."""
     init_db()
-
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    
+    # Створення ApplicationBuilder та ConversationHandler
+    application = ApplicationBuilder().token(TOKEN).build()
     
     conv_handler = ConversationHandler(
         entry_points=[
@@ -812,7 +813,6 @@ async def main():
     application.add_handler(CallbackQueryHandler(admin_force_cancel_booking, pattern="^admin_force_cancel_.+"))
     application.add_handler(MessageHandler(filters.ChatType.PRIVATE & (filters.TEXT | filters.COMMAND), unknown))
     
-        
     logging.info("Бот запущено...")
     await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
