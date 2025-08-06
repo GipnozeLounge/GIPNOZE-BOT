@@ -755,7 +755,7 @@ async def main():
     """Основна асинхронна функція для запуску бота."""
     init_db()
 
-    application = ApplicationBuilder().token(TOKEN).build()
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
     
     conv_handler = ConversationHandler(
         entry_points=[
